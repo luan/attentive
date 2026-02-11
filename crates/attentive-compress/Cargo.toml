@@ -12,7 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-anthropic-sdk = { version = "0.1", optional = true }
-
-[features]
-claude-api = ["dep:anthropic-sdk"]
+chrono = { workspace = true }
+rusqlite = { version = "0.38", features = ["bundled"] }
+reqwest = { version = "0.13", features = ["json"] }
+tokio = { version = "1", features = ["rt", "macros"] }
