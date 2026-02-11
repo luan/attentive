@@ -1,1 +1,7 @@
-//! Code indexing and graph-based retrieval
+//! BM25 + SQLite search index
+
+mod bm25;
+mod index;
+mod tfidf;
+
+pub use index::{Document, SearchIndex};
