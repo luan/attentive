@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Init => commands::init::run(),
         Commands::Ingest { file } => commands::ingest::run(file.as_deref()),
-        Commands::Status => commands::status::run(),
+        Commands::Status { session } => commands::status::run(session.as_deref()),
         Commands::Version => commands::version::run(),
         Commands::HookUserPromptSubmit => commands::hooks::hook_user_prompt_submit(),
         Commands::HookSessionStart => commands::hooks::hook_session_start(),

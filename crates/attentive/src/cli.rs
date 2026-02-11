@@ -21,8 +21,12 @@ pub enum Commands {
         file: Option<String>,
     },
 
-    /// Show configuration status
-    Status,
+    /// Output statusline JSON (tiers, hit rate)
+    Status {
+        /// Session ID for live hit rate from transcript
+        #[arg(long)]
+        session: Option<String>,
+    },
 
     /// Print version information
     Version,
