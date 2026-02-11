@@ -7,8 +7,12 @@ repository.workspace = true
 
 [dependencies]
 attentive-telemetry = { path = "../attentive-telemetry" }
+attentive-learn = { path = "../attentive-learn" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+petgraph = "0.8"
+regex = "1.10"
+chrono = { workspace = true }
