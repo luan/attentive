@@ -5,7 +5,7 @@ use crate::tfidf::SimpleTFIDF;
 use anyhow::Result;
 use chrono::Utc;
 use regex::Regex;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;

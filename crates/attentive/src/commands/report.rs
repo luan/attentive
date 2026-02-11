@@ -1,4 +1,4 @@
-use attentive_telemetry::{read_jsonl, Paths, TurnRecord};
+use attentive_telemetry::{Paths, TurnRecord, read_jsonl};
 use std::collections::HashMap;
 
 pub fn run() -> anyhow::Result<()> {
@@ -104,7 +104,7 @@ fn build_file_leaderboard(turns: &[TurnRecord]) -> String {
         })
         .collect();
 
-    files.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by injection count desc
+    files.sort_by_key(|x| std::cmp::Reverse(x.1));
 
     files
         .iter()

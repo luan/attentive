@@ -262,7 +262,7 @@ mod tests {
     fn test_parse_session_jsonl() {
         let temp = tempfile::TempDir::new().unwrap();
         let path = temp.path().join("session.jsonl");
-        let lines = vec![
+        let lines = [
             serde_json::json!({"type": "human", "message": {"content": [{"type": "text", "text": "fix router"}]}}),
             serde_json::json!({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "router.rs"}}]}}),
         ];

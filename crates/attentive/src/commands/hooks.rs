@@ -195,7 +195,7 @@ fn build_dashboard(
         .iter()
         .map(|(f, &inj)| (*f, inj, *file_used.get(f).unwrap_or(&0)))
         .collect();
-    waste_sorted.sort_by(|a, b| (b.1 as i64 - b.2 as i64).cmp(&(a.1 as i64 - a.2 as i64)));
+    waste_sorted.sort_by_key(|x| std::cmp::Reverse(x.1 as i64 - x.2 as i64));
     if !waste_sorted.is_empty() {
         let top3: Vec<String> = waste_sorted
             .iter()

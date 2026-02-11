@@ -1,6 +1,6 @@
 //! LoopBreaker Plugin - Detects and breaks repetitive failure loops
 
-use crate::base::{load_state, save_state, Plugin, SessionState, ToolCall};
+use crate::base::{Plugin, SessionState, ToolCall, load_state, save_state};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 

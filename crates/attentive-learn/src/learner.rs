@@ -382,13 +382,13 @@ mod tests {
         assert!(
             coact
                 .get("a.rs")
-                .map_or(false, |v| v.contains(&"b.rs".to_string())),
+                .is_some_and(|v| v.contains(&"b.rs".to_string())),
             "a.rs and b.rs should co-activate"
         );
         assert!(
             !coact
                 .get("a.rs")
-                .map_or(false, |v| v.contains(&"c.rs".to_string())),
+                .is_some_and(|v| v.contains(&"c.rs".to_string())),
             "a.rs and c.rs should not co-activate"
         );
     }

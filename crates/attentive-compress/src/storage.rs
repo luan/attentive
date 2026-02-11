@@ -1,6 +1,6 @@
 use crate::{CompressedObservation, ObservationIndex};
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 
 pub struct ObservationDb {

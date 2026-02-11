@@ -56,7 +56,7 @@ mod tests {
         let code = "fn main() {\n    println!(\"Hello\");\n}";
         let tokens = estimate_tokens(code);
         // Code should be ~2.5 chars/token, so 38 chars / 2.5 ~= 15 tokens
-        assert!(tokens >= 12 && tokens <= 20, "Got {}", tokens);
+        assert!((12..=20).contains(&tokens), "Got {}", tokens);
     }
 
     #[test]
@@ -64,6 +64,6 @@ mod tests {
         let prose = "This is a simple sentence with natural language that should be counted at about four characters per token.";
         let tokens = estimate_tokens(prose);
         // Prose should be ~4.0 chars/token, so 106 chars / 4.0 ~= 26 tokens
-        assert!(tokens >= 20 && tokens <= 32, "Got {}", tokens);
+        assert!((20..=32).contains(&tokens), "Got {}", tokens);
     }
 }

@@ -1,6 +1,6 @@
 //! Repository mapper with PageRank-based ranking
 
-use crate::symbols::{extract_symbols, FileSymbols};
+use crate::symbols::{FileSymbols, extract_symbols};
 use petgraph::algo::page_rank;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
