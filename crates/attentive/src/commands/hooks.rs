@@ -493,10 +493,8 @@ fn extract_tool_calls_from_transcript(transcript_path: &str) -> Vec<attentive_pl
         Err(_) => return Vec::new(),
     };
 
-    // Read last assistant turn's tool_use entries from transcript JSONL
-    // Each line is a JSON object; assistant turns have type "assistant"
-    // with message.content containing tool_use blocks
-    let mut last_tool_calls = Vec::new();
+    // Collect tool_use entries from ALL assistant turns in the transcript
+    let mut all_tool_calls = Vec::new();
     let reader = BufReader::new(file);
 
     for line in reader.lines() {
@@ -509,13 +507,10 @@ fn extract_tool_calls_from_transcript(transcript_path: &str) -> Vec<attentive_pl
             Err(_) => continue,
         };
 
-        let turn_type = turn.get("type").and_then(|t| t.as_str()).unwrap_or("");
-        if turn_type != "assistant" {
+        if turn.get("type").and_then(|t| t.as_str()) != Some("assistant") {
             continue;
         }
 
-        // Each assistant turn resets — we want the last one's tool calls
-        let mut turn_calls = Vec::new();
         if let Some(content) = turn.pointer("/message/content").and_then(|c| c.as_array()) {
             for item in content {
                 if item.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
@@ -551,7 +546,7 @@ fn extract_tool_calls_from_transcript(transcript_path: &str) -> Vec<attentive_pl
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                turn_calls.push(attentive_plugins::ToolCall {
+                all_tool_calls.push(attentive_plugins::ToolCall {
                     tool,
                     target,
                     content,
@@ -560,13 +555,9 @@ fn extract_tool_calls_from_transcript(transcript_path: &str) -> Vec<attentive_pl
                 });
             }
         }
-
-        if !turn_calls.is_empty() {
-            last_tool_calls = turn_calls;
-        }
     }
 
-    last_tool_calls
+    all_tool_calls
 }
 
 fn extract_files_from_tool_calls(tool_calls: &[attentive_plugins::ToolCall]) -> Vec<String> {
@@ -574,6 +565,8 @@ fn extract_files_from_tool_calls(tool_calls: &[attentive_plugins::ToolCall]) -> 
     for tc in tool_calls {
         if let Some(target) = &tc.target
             && !target.is_empty()
+            && target.starts_with('/')
+            && std::path::Path::new(target).is_file()
         {
             files.insert(target.clone());
         }
@@ -734,17 +727,23 @@ mod tests {
 
     #[test]
     fn test_extract_files_from_tool_calls() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let file_a = temp.path().join("router.rs");
+        let file_b = temp.path().join("config.rs");
+        std::fs::write(&file_a, "").unwrap();
+        std::fs::write(&file_b, "").unwrap();
+
         let tool_calls = vec![
             attentive_plugins::ToolCall {
                 tool: "Read".to_string(),
-                target: Some("/path/to/router.rs".to_string()),
+                target: Some(file_a.to_string_lossy().to_string()),
                 content: None,
                 old_string: None,
                 command: None,
             },
             attentive_plugins::ToolCall {
                 tool: "Edit".to_string(),
-                target: Some("/path/to/config.rs".to_string()),
+                target: Some(file_b.to_string_lossy().to_string()),
                 content: Some("new content".to_string()),
                 old_string: Some("old content".to_string()),
                 command: None,
@@ -756,12 +755,19 @@ mod tests {
                 old_string: None,
                 command: Some("cargo test".to_string()),
             },
+            attentive_plugins::ToolCall {
+                tool: "Read".to_string(),
+                target: Some("/nonexistent/fake.rs".to_string()),
+                content: None,
+                old_string: None,
+                command: None,
+            },
         ];
 
         let files_used = extract_files_from_tool_calls(&tool_calls);
-        assert!(files_used.contains(&"/path/to/router.rs".to_string()));
-        assert!(files_used.contains(&"/path/to/config.rs".to_string()));
-        assert_eq!(files_used.len(), 2);
+        assert!(files_used.contains(&file_a.to_string_lossy().to_string()));
+        assert!(files_used.contains(&file_b.to_string_lossy().to_string()));
+        assert_eq!(files_used.len(), 2); // fake path and Bash (no target) excluded
     }
 
     #[test]
