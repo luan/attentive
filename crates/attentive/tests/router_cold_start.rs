@@ -12,7 +12,7 @@ fn test_cold_start_initialization() {
     state.scores.insert("router.rs".to_string(), 0.5);
     state.scores.insert("config.rs".to_string(), 0.5);
 
-    let activated = router.update_attention(&mut state, "", None);
+    let activated = router.update_attention(&mut state, "", None, std::collections::HashSet::new());
 
     // Verify decay applied (default decay rate is 0.7)
     assert!(
@@ -39,7 +39,7 @@ fn test_cold_start_produces_valid_output() {
     state.scores.insert("warm.rs".to_string(), 0.5);
     state.scores.insert("cold.rs".to_string(), 0.1);
 
-    router.update_attention(&mut state, "", None);
+    router.update_attention(&mut state, "", None, std::collections::HashSet::new());
     let (hot, warm, cold) = router.build_context_output(&state);
 
     // Verify output structure is valid

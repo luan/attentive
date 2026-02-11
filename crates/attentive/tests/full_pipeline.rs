@@ -21,7 +21,12 @@ fn test_full_5_turn_pipeline() {
     }
 
     // Turn 1: Without keywords, no direct activation - only decay applies
-    let activated = router.update_attention(&mut state, "fix the router", None);
+    let activated = router.update_attention(
+        &mut state,
+        "fix the router",
+        None,
+        std::collections::HashSet::new(),
+    );
     learner.observe_turn(
         "fix the router",
         &activated.iter().cloned().collect::<Vec<_>>(),
@@ -31,13 +36,19 @@ fn test_full_5_turn_pipeline() {
     assert!(*state.scores.get("router.rs").unwrap() > 0.3);
 
     // Turn 2: everything continues to decay
-    let activated2 = router.update_attention(&mut state, "thanks", None);
+    let activated2 =
+        router.update_attention(&mut state, "thanks", None, std::collections::HashSet::new());
     assert!(activated2.is_empty());
     assert!(*state.scores.get("router.rs").unwrap() < 0.35);
 
     // Turn 3-5: continued decay
     for turn in 3..=5 {
-        router.update_attention(&mut state, "continuing work", None);
+        router.update_attention(
+            &mut state,
+            "continuing work",
+            None,
+            std::collections::HashSet::new(),
+        );
         let router_score = *state.scores.get("router.rs").unwrap();
         assert!(
             router_score < 0.5,

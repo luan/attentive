@@ -19,7 +19,12 @@ fn bench_router_update_10_files(c: &mut Criterion) {
     c.bench_function("router_update_10_files", |b| {
         b.iter(|| {
             let mut state_clone = state.clone();
-            router.update_attention(&mut state_clone, black_box("test prompt"), None);
+            router.update_attention(
+                &mut state_clone,
+                black_box("test prompt"),
+                None,
+                std::collections::HashSet::new(),
+            );
         });
     });
 }
@@ -48,7 +53,12 @@ fn bench_router_co_activation_2hop(c: &mut Criterion) {
     c.bench_function("router_co_activation_2hop", |b| {
         b.iter(|| {
             let mut state_clone = state.clone();
-            router.update_attention(&mut state_clone, black_box("key"), None);
+            router.update_attention(
+                &mut state_clone,
+                black_box("key"),
+                None,
+                std::collections::HashSet::new(),
+            );
         });
     });
 }

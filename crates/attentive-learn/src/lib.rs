@@ -2,7 +2,7 @@
 
 mod learner;
 mod oracle;
-mod predictor;
+pub mod predictor;
 
 pub use learner::Learner;
 pub use oracle::{Oracle, TaskType};

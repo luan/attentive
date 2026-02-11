@@ -134,7 +134,12 @@ pub fn run() -> anyhow::Result<()> {
     // 5. Time router update
     let start = Instant::now();
     let prompt = "benchmark run";
-    router.update_attention(&mut state, prompt, Some(&learner));
+    router.update_attention(
+        &mut state,
+        prompt,
+        Some(&learner),
+        std::collections::HashSet::new(),
+    );
     let router_us = start.elapsed().as_micros();
 
     // 6. Count tiers from raw state (before truncation)

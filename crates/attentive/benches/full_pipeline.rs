@@ -26,7 +26,12 @@ fn bench_full_pipeline_20_files(c: &mut Criterion) {
     c.bench_function("full_pipeline_20_files", |b| {
         b.iter(|| {
             let mut state_clone = state.clone();
-            router.update_attention(&mut state_clone, black_box("test prompt"), None);
+            router.update_attention(
+                &mut state_clone,
+                black_box("test prompt"),
+                None,
+                std::collections::HashSet::new(),
+            );
             registry.on_stop(&[], &session_state);
         });
     });

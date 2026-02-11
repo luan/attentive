@@ -13,7 +13,7 @@ fn test_five_turn_decay_sequence() {
     let decay_rate: f64 = 0.7;
 
     for turn in 1..=5 {
-        router.update_attention(&mut state, "", None);
+        router.update_attention(&mut state, "", None, std::collections::HashSet::new());
         let expected_score = 1.0 * decay_rate.powi(turn);
         let actual_score = state.scores["file.rs"];
         assert!(
@@ -38,7 +38,7 @@ fn test_co_activation_graph_built() {
     state.scores.insert("a.rs".to_string(), 1.0);
     state.scores.insert("b.rs".to_string(), 0.1);
 
-    router.update_attention(&mut state, "prompt", None);
+    router.update_attention(&mut state, "prompt", None, std::collections::HashSet::new());
 
     // Without keyword activation, co-activation won't trigger
     // (it requires directly_activated to be non-empty)

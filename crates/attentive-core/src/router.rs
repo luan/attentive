@@ -30,10 +30,18 @@ impl Router {
         state: &mut AttentionState,
         prompt: &str,
         learner: Option<&attentive_learn::Learner>,
+        directly_activated: HashSet<String>,
     ) -> HashSet<String> {
-        let directly_activated = HashSet::new();
+        // Add newly mentioned files to state with initial score
+        for activated_path in &directly_activated {
+            state.scores.entry(activated_path.clone()).or_insert(0.6);
+            state
+                .consecutive_turns
+                .entry(activated_path.clone())
+                .or_insert(0);
+        }
 
-        // Ensure consecutive_turns exists
+        // Ensure consecutive_turns exists for all existing files
         for path in state.scores.keys() {
             state.consecutive_turns.entry(path.clone()).or_insert(0);
         }
@@ -242,7 +250,7 @@ mod tests {
         let mut state = AttentionState::new();
         state.scores.insert("file1.md".to_string(), 1.0);
 
-        router.update_attention(&mut state, "other prompt", None);
+        router.update_attention(&mut state, "other prompt", None, HashSet::new());
 
         // Should have decayed (default 0.7)
         assert!(*state.scores.get("file1.md").unwrap() < 1.0);
@@ -277,7 +285,7 @@ mod tests {
         state.scores.insert("demoted.md".to_string(), 0.6);
         state.scores.insert("normal.md".to_string(), 0.6);
 
-        router.update_attention(&mut state, "unrelated", None);
+        router.update_attention(&mut state, "unrelated", None, HashSet::new());
 
         // demoted.md: 0.6 * 0.7 (decay) * 0.5 (penalty) = 0.21
         let demoted_score = *state.scores.get("demoted.md").unwrap();
@@ -307,7 +315,7 @@ mod tests {
         let mut state = AttentionState::new();
         state.scores.insert("file1.md".to_string(), 0.3);
 
-        router.update_attention(&mut state, "router", Some(&learner));
+        router.update_attention(&mut state, "router", Some(&learner), HashSet::new());
 
         // Score should be boosted above what pure decay would give (0.3 * 0.7 = 0.21)
         let score = *state.scores.get("file1.md").unwrap();
@@ -336,7 +344,7 @@ mod tests {
         let mut state = AttentionState::new();
         state.scores.insert("freq.md".to_string(), 1.0);
 
-        router.update_attention(&mut state, "unrelated", Some(&learner));
+        router.update_attention(&mut state, "unrelated", Some(&learner), HashSet::new());
 
         // Should use learned slow decay (~0.88) instead of default (0.7)
         let score = *state.scores.get("freq.md").unwrap();
@@ -346,5 +354,35 @@ mod tests {
             score
         );
         assert!(score < 0.9, "Decay should still apply: {}", score);
+    }
+
+    #[test]
+    fn test_co_activation_with_direct_activation() {
+        let mut config = Config::new();
+        config
+            .co_activation
+            .insert("router.rs".to_string(), vec!["config.rs".to_string()]);
+        config.coactivation_boost = 0.35;
+
+        let router = Router::new(config);
+        let mut state = AttentionState::new();
+        state.scores.insert("config.rs".to_string(), 0.3);
+
+        // Simulate direct activation of router.rs
+        let mut directly_activated = HashSet::new();
+        directly_activated.insert("router.rs".to_string());
+
+        // Call with directly_activated
+        state.scores.insert("router.rs".to_string(), 0.9);
+        let _activated = router.update_attention(&mut state, "", None, directly_activated);
+
+        // config.rs should receive co-activation boost
+        let config_score = *state.scores.get("config.rs").unwrap();
+        // 0.3 * 0.7 (decay) + 0.35 (boost) = 0.56
+        assert!(
+            config_score > 0.5,
+            "Co-activation should boost config.rs: {}",
+            config_score
+        );
     }
 }

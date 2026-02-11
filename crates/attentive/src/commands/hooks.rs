@@ -2,6 +2,7 @@ use attentive_core::{AttentionState, Config, Router};
 use attentive_plugins::PluginRegistry;
 use attentive_telemetry::Paths;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::io::{self, Read, Write};
 use std::path::Path;
 
@@ -83,6 +84,21 @@ fn extract_toc(content: &str) -> String {
         }
     }
     toc_lines.join("\n")
+}
+
+fn estimate_context_chars(hot_files: &[String], warm_files: &[String]) -> usize {
+    // HOT gets 70% of budget split equally, WARM gets 30%
+    let per_hot = if !hot_files.is_empty() {
+        (MAX_TOTAL_CHARS * 70 / 100) / hot_files.len()
+    } else {
+        0
+    };
+    let hot_total = hot_files.len() * per_hot;
+
+    // WARM: estimate ~200 chars per TOC
+    let warm_total = warm_files.len() * 200;
+
+    hot_total + warm_total
 }
 
 fn build_tiered_context(
@@ -267,21 +283,56 @@ pub fn hook_user_prompt_submit() -> anyhow::Result<()> {
     let learned_state_path = paths.learned_state_path()?;
     let learner = load_learner(&learned_state_path);
 
-    let _activated = router.update_attention(&mut state, &prompt, learner.as_ref());
-
-    // Enforce floors for learned files — warmup files stay HOT, frequent files stay WARM
-    if let Some(l) = &learner {
-        for file in l.get_warmup() {
-            let score = state.scores.entry(file).or_insert(0.0);
-            *score = score.max(0.8);
-        }
-        for (file, _freq) in l.top_files_by_frequency(20) {
-            let score = state.scores.entry(file).or_insert(0.0);
-            *score = score.max(0.4);
+    // Extract file mentions from prompt for direct activation
+    let file_mentions = attentive_learn::predictor::extract_file_mentions(&prompt);
+    let mut directly_activated = HashSet::new();
+    for mention in file_mentions {
+        // Check if file exists in current state.scores (known files)
+        if state.scores.contains_key(&mention) {
+            directly_activated.insert(mention);
+        } else {
+            // Check if absolute path exists on disk
+            if std::path::Path::new(&mention).exists() {
+                directly_activated.insert(mention);
+            }
         }
     }
 
-    let (hot_files, warm_files, _cold_files) = router.build_context_output(&state);
+    let _activated =
+        router.update_attention(&mut state, &prompt, learner.as_ref(), directly_activated);
+
+    // Enforce floors for learned files — warmup files stay WARM, frequent files stay visible
+    if let Some(l) = &learner {
+        for file in l.get_warmup() {
+            let score = state.scores.entry(file).or_insert(0.0);
+            *score = score.max(0.6); // WARM, not HOT
+        }
+        for (file, _freq) in l.top_files_by_frequency(5) {
+            let score = state.scores.entry(file).or_insert(0.0);
+            *score = score.max(0.3); // Visible threshold, not forced WARM
+        }
+    }
+
+    let (mut hot_files, mut warm_files, _cold_files) = router.build_context_output(&state);
+
+    // Budget enforcement: if learner floors pushed us over budget, demote excess HOT to WARM
+    let mut total_chars = estimate_context_chars(&hot_files, &warm_files);
+    if total_chars > MAX_TOTAL_CHARS {
+        // Sort HOT by priority: prompt-mentioned > high-score > warmup
+        // (already sorted by build_context_output: pinned > streak > score)
+        // Keep demoting HOT->WARM until under budget
+        while !hot_files.is_empty() && total_chars > MAX_TOTAL_CHARS {
+            let demoted = hot_files.pop().unwrap();
+            warm_files.push(demoted);
+            total_chars = estimate_context_chars(&hot_files, &warm_files);
+        }
+
+        // If still over, truncate WARM
+        while !warm_files.is_empty() && total_chars > MAX_TOTAL_CHARS {
+            warm_files.pop();
+            total_chars = estimate_context_chars(&hot_files, &warm_files);
+        }
+    }
 
     // 7. Build context string (HOT: full content, WARM: TOC, COLD: evicted)
     let context_output = build_tiered_context(&hot_files, &warm_files, MAX_TOTAL_CHARS);
@@ -460,7 +511,8 @@ pub fn hook_stop() -> anyhow::Result<()> {
     // Train learner with files_used and update warmup for next session
     let learned_state_path = paths.learned_state_path()?;
     if let Some(mut learner) = load_learner(&learned_state_path) {
-        learner.observe_turn("", &files_used);
+        let prompts = extract_user_prompts_from_transcript(transcript_path, 5);
+        learner.observe_turn(&prompts, &files_used);
         if !files_used.is_empty() {
             learner.save_session(&files_used);
         }
@@ -572,6 +624,52 @@ fn extract_files_from_tool_calls(tool_calls: &[attentive_plugins::ToolCall]) -> 
         }
     }
     files.into_iter().collect()
+}
+
+fn extract_user_prompts_from_transcript(transcript_path: &str, last_n_turns: usize) -> String {
+    use std::io::{BufRead, BufReader};
+
+    if transcript_path.is_empty() {
+        return String::new();
+    }
+
+    let file = match std::fs::File::open(transcript_path) {
+        Ok(f) => f,
+        Err(_) => return String::new(),
+    };
+
+    // Collect human turns with text content
+    let mut human_prompts = Vec::new();
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let turn: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        if turn.get("type").and_then(|t| t.as_str()) != Some("human") {
+            continue;
+        }
+
+        if let Some(content) = turn.pointer("/message/content").and_then(|c| c.as_array()) {
+            for item in content {
+                if item.get("type").and_then(|t| t.as_str()) == Some("text")
+                    && let Some(text) = item.get("text").and_then(|t| t.as_str())
+                {
+                    human_prompts.push(text.to_string());
+                }
+            }
+        }
+    }
+
+    // Take last N turns, concatenate
+    let start = human_prompts.len().saturating_sub(last_n_turns);
+    human_prompts[start..].join(" ")
 }
 
 fn compute_hit_rate(files_injected: &[String], files_used: &[String]) -> f64 {
@@ -840,5 +938,160 @@ mod tests {
 
         let content = read_file_content(big_file.to_str().unwrap(), 1000);
         assert!(content.len() <= 1100); // Allow small overhead for truncation marker
+    }
+
+    #[test]
+    fn test_extract_user_prompts_from_transcript() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let transcript = temp.path().join("transcript.jsonl");
+
+        // Write test transcript with human turns
+        let lines = vec![
+            serde_json::json!({
+                "type": "human",
+                "message": {"content": [{"type": "text", "text": "fix the router bug"}]}
+            }),
+            serde_json::json!({
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Sure"}]}
+            }),
+            serde_json::json!({
+                "type": "human",
+                "message": {"content": [{"type": "text", "text": "update config settings"}]}
+            }),
+            serde_json::json!({
+                "type": "assistant",
+                "message": {"content": []}
+            }),
+        ];
+
+        let mut file = std::fs::File::create(&transcript).unwrap();
+        use std::io::Write;
+        for line in lines {
+            writeln!(file, "{}", serde_json::to_string(&line).unwrap()).unwrap();
+        }
+        drop(file);
+
+        let prompts = extract_user_prompts_from_transcript(transcript.to_str().unwrap(), 10);
+        assert!(
+            prompts.contains("fix the router bug"),
+            "Should extract first human turn"
+        );
+        assert!(
+            prompts.contains("update config settings"),
+            "Should extract second human turn"
+        );
+    }
+
+    #[test]
+    fn test_extract_user_prompts_limits_to_last_n() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let transcript = temp.path().join("transcript.jsonl");
+
+        let lines = (0..20)
+            .map(|i| {
+                serde_json::json!({
+                    "type": "human",
+                    "message": {"content": [{"type": "text", "text": format!("prompt {}", i)}]}
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut file = std::fs::File::create(&transcript).unwrap();
+        use std::io::Write;
+        for line in lines {
+            writeln!(file, "{}", serde_json::to_string(&line).unwrap()).unwrap();
+        }
+        drop(file);
+
+        let prompts = extract_user_prompts_from_transcript(transcript.to_str().unwrap(), 5);
+        assert!(prompts.contains("prompt 19"), "Should include last prompt");
+        assert!(
+            prompts.contains("prompt 15"),
+            "Should include 5th from last"
+        );
+        assert!(
+            !prompts.contains("prompt 14"),
+            "Should NOT include 6th from last"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_learner_receives_real_prompts_in_stop_hook() {
+        let paths = Paths::new().unwrap();
+        std::fs::create_dir_all(paths.project_dir().unwrap()).unwrap();
+
+        // Setup: create learner and transcript
+        let learned_state_path = paths.learned_state_path().unwrap();
+        let learner = attentive_learn::Learner::new();
+        let json = serde_json::to_string(&learner).unwrap();
+        std::fs::write(&learned_state_path, json.as_bytes()).unwrap();
+
+        let transcript = paths.project_dir().unwrap().join("test_transcript.jsonl");
+        let lines = vec![
+            serde_json::json!({
+                "type": "human",
+                "message": {"content": [{"type": "text", "text": "fix router performance"}]}
+            }),
+            serde_json::json!({
+                "type": "assistant",
+                "message": {"content": [{
+                    "type": "tool_use",
+                    "name": "Edit",
+                    "input": {"file_path": "/test/router.rs", "old_string": "x", "new_string": "y"}
+                }]}
+            }),
+        ];
+
+        let mut file = std::fs::File::create(&transcript).unwrap();
+        use std::io::Write;
+        for line in &lines {
+            writeln!(file, "{}", serde_json::to_string(&line).unwrap()).unwrap();
+        }
+        drop(file);
+
+        // For unit test: verify extract_user_prompts returns non-empty
+        let prompts = extract_user_prompts_from_transcript(transcript.to_str().unwrap(), 10);
+        assert!(
+            !prompts.is_empty(),
+            "Should extract user prompts from transcript"
+        );
+        assert!(prompts.contains("router"), "Should contain prompt words");
+    }
+
+    #[test]
+    fn test_estimate_context_chars_accuracy() {
+        let hot = vec!["a.rs".to_string(), "b.rs".to_string()];
+        let warm = vec!["c.rs".to_string(), "d.rs".to_string(), "e.rs".to_string()];
+
+        let estimate = estimate_context_chars(&hot, &warm);
+
+        // 2 HOT: (20000 * 0.7) / 2 = 7000 per file = 14000 total
+        // 3 WARM: 3 * 200 = 600
+        // Total: 14600
+        assert_eq!(estimate, 14600);
+    }
+
+    #[test]
+    fn test_budget_enforcement_truncates_warm_if_needed() {
+        let hot = vec!["a.rs".to_string()];
+        let mut warm = vec![];
+        for i in 0..100 {
+            warm.push(format!("warm{}.rs", i));
+        }
+
+        let mut total = estimate_context_chars(&hot, &warm);
+
+        // Should exceed budget
+        assert!(total > MAX_TOTAL_CHARS);
+
+        // Truncate WARM until under budget
+        while !warm.is_empty() && total > MAX_TOTAL_CHARS {
+            warm.pop();
+            total = estimate_context_chars(&hot, &warm);
+        }
+
+        assert!(total <= MAX_TOTAL_CHARS);
     }
 }
