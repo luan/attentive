@@ -124,7 +124,7 @@ impl Oracle {
         let key = format!("{:?}", task_type).to_lowercase();
         self.task_costs
             .get(&key)
-            .map(|e| if e.count > 0 { e.tokens / e.count } else { 0 })
+            .map(|e| e.tokens.checked_div(e.count).unwrap_or(0))
     }
 }
 

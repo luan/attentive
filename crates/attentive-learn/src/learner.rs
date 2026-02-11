@@ -283,7 +283,7 @@ impl Learner {
             .map(|(file, turns)| (file.clone(), turns.len()))
             .collect();
 
-        file_freq.sort_by(|a, b| b.1.cmp(&a.1));
+        file_freq.sort_by_key(|b| std::cmp::Reverse(b.1));
         file_freq.truncate(limit);
         file_freq
     }
