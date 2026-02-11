@@ -263,32 +263,21 @@ pub fn hook_user_prompt_submit() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // 6. Seed learned files, run router, then restore seeds that decay killed
+    // 6. Run router (decay + learner boost), then enforce learned floors
     let learned_state_path = paths.learned_state_path()?;
     let learner = load_learner(&learned_state_path);
-    let mut seed_scores: Vec<(String, f64)> = Vec::new();
-    if let Some(l) = &learner {
-        for file in l.get_warmup() {
-            if !state.scores.contains_key(&file) {
-                state.scores.insert(file.clone(), 0.8);
-                seed_scores.push((file, 0.8));
-            }
-        }
-        for (file, _freq) in l.top_files_by_frequency(50) {
-            if !state.scores.contains_key(&file) {
-                state.scores.insert(file.clone(), 0.5);
-                seed_scores.push((file, 0.5));
-            }
-        }
-    }
 
-    // 7. Run router (decay + learner boost)
     let _activated = router.update_attention(&mut state, &prompt, learner.as_ref());
 
-    // Restore seed floors — decay shouldn't penalize files with no prior state
-    for (file, floor) in &seed_scores {
-        if let Some(score) = state.scores.get_mut(file) {
-            *score = score.max(*floor);
+    // Enforce floors for learned files — warmup files stay HOT, frequent files stay WARM
+    if let Some(l) = &learner {
+        for file in l.get_warmup() {
+            let score = state.scores.entry(file).or_insert(0.0);
+            *score = score.max(0.8);
+        }
+        for (file, _freq) in l.top_files_by_frequency(20) {
+            let score = state.scores.entry(file).or_insert(0.0);
+            *score = score.max(0.4);
         }
     }
 
@@ -391,17 +380,25 @@ pub fn hook_session_start() -> anyhow::Result<()> {
 pub fn hook_stop() -> anyhow::Result<()> {
     use attentive_telemetry::{TurnRecord, append_jsonl};
 
-    // 1. Read stdin (tool calls JSON)
+    // 1. Read Stop hook input: {session_id, transcript_path, cwd, ...}
     let mut input_str = String::new();
     io::stdin().read_to_string(&mut input_str)?;
 
-    let tool_calls: Vec<attentive_plugins::ToolCall> = if input_str.trim().is_empty() {
-        Vec::new()
-    } else {
-        serde_json::from_str(&input_str).unwrap_or_default()
-    };
+    let input: serde_json::Value =
+        serde_json::from_str(&input_str).unwrap_or_else(|_| serde_json::json!({}));
+    let transcript_path = input
+        .get("transcript_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let session_id = input
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
 
-    // 2. Initialize plugins and run on_stop
+    // 2. Extract tool calls from the last assistant turn in transcript
+    let tool_calls = extract_tool_calls_from_transcript(transcript_path);
+
+    // 3. Initialize plugins and run on_stop
     let mut registry = PluginRegistry::new();
     registry.register(Box::new(attentive_plugins::BurnRatePlugin::new()));
     registry.register(Box::new(attentive_plugins::LoopBreakerPlugin::new()));
@@ -414,51 +411,46 @@ pub fn hook_stop() -> anyhow::Result<()> {
         eprintln!("{}", msg);
     }
 
-    // 3. Estimate tokens from attention state
+    // 4. Estimate tokens from attention state
     let paths = Paths::new()?;
     std::fs::create_dir_all(paths.telemetry_dir())?;
     let project_dir = paths.project_dir()?;
     std::fs::create_dir_all(&project_dir)?;
 
     let state_path = paths.attn_state_path()?;
-    let (injected_tokens, used_tokens) = if state_path.exists() {
-        let content = std::fs::read_to_string(&state_path).unwrap_or_default();
-        if let Ok(state) = serde_json::from_str::<AttentionState>(&content) {
-            let hot = state.get_hot_files();
-            let warm = state.get_warm_files();
-            // Rough estimate: HOT files ~500 tokens each, WARM ~200 each
-            let injected = hot.len() * 500 + warm.len() * 200;
-            // Used tokens estimated from tool calls
-            let used = tool_calls
-                .iter()
-                .map(|tc| {
-                    let content_len = tc.content.as_deref().unwrap_or("").len()
-                        + tc.old_string.as_deref().unwrap_or("").len()
-                        + tc.command.as_deref().unwrap_or("").len();
-                    content_len / 4
-                })
-                .sum::<usize>();
-            (injected, used)
-        } else {
-            (0, 0)
-        }
+    let state = if state_path.exists() {
+        std::fs::read_to_string(&state_path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<AttentionState>(&c).ok())
+    } else {
+        None
+    };
+
+    let (injected_tokens, used_tokens) = if let Some(ref state) = state {
+        let hot = state.get_hot_files();
+        let warm = state.get_warm_files();
+        let injected = hot.len() * 500 + warm.len() * 200;
+        let used = tool_calls
+            .iter()
+            .map(|tc| {
+                let content_len = tc.content.as_deref().unwrap_or("").len()
+                    + tc.old_string.as_deref().unwrap_or("").len()
+                    + tc.command.as_deref().unwrap_or("").len();
+                content_len / 4
+            })
+            .sum::<usize>();
+        (injected, used)
     } else {
         (0, 0)
     };
 
     let waste_ratio = calculate_waste_ratio(injected_tokens, used_tokens);
-
     let files_used = extract_files_from_tool_calls(&tool_calls);
 
-    let files_injected = if state_path.exists() {
-        let content = std::fs::read_to_string(&state_path).unwrap_or_default();
-        if let Ok(state) = serde_json::from_str::<AttentionState>(&content) {
-            let mut injected = state.get_hot_files();
-            injected.extend(state.get_warm_files());
-            injected
-        } else {
-            Vec::new()
-        }
+    let files_injected = if let Some(ref state) = state {
+        let mut injected = state.get_hot_files();
+        injected.extend(state.get_warm_files());
+        injected
     } else {
         Vec::new()
     };
@@ -468,7 +460,7 @@ pub fn hook_stop() -> anyhow::Result<()> {
 
     let record = TurnRecord {
         turn_id: uuid_simple(),
-        session_id: "default".to_string(),
+        session_id: session_id.to_string(),
         project: std::env::current_dir()?.to_string_lossy().to_string(),
         timestamp: chrono::Utc::now(),
         injected_tokens,
@@ -482,10 +474,13 @@ pub fn hook_stop() -> anyhow::Result<()> {
     };
     append_jsonl(&paths.turns_file(), &record)?;
 
-    // Train learner with files_used
+    // Train learner with files_used and update warmup for next session
     let learned_state_path = paths.learned_state_path()?;
     if let Some(mut learner) = load_learner(&learned_state_path) {
         learner.observe_turn("", &files_used);
+        if !files_used.is_empty() {
+            learner.save_session(&files_used);
+        }
         if let Ok(json) = serde_json::to_string(&learner) {
             let _ = attentive_telemetry::atomic_write(&learned_state_path, json.as_bytes());
         }
@@ -501,6 +496,94 @@ fn uuid_simple() -> String {
         .unwrap()
         .as_nanos();
     format!("turn_{:x}", nanos)
+}
+
+fn extract_tool_calls_from_transcript(transcript_path: &str) -> Vec<attentive_plugins::ToolCall> {
+    use std::io::{BufRead, BufReader};
+
+    if transcript_path.is_empty() {
+        return Vec::new();
+    }
+
+    let file = match std::fs::File::open(transcript_path) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+
+    // Read last assistant turn's tool_use entries from transcript JSONL
+    // Each line is a JSON object; assistant turns have type "assistant"
+    // with message.content containing tool_use blocks
+    let mut last_tool_calls = Vec::new();
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let turn: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let turn_type = turn.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        if turn_type != "assistant" {
+            continue;
+        }
+
+        // Each assistant turn resets — we want the last one's tool calls
+        let mut turn_calls = Vec::new();
+        if let Some(content) = turn.pointer("/message/content").and_then(|c| c.as_array()) {
+            for item in content {
+                if item.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                    continue;
+                }
+                let input = match item.get("input") {
+                    Some(i) => i,
+                    None => continue,
+                };
+                let tool = item
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let target = input
+                    .get("file_path")
+                    .or_else(|| input.get("path"))
+                    .or_else(|| input.get("notebook_path"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                let content = input
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let old_string = input
+                    .get("old_string")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let command = input
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                turn_calls.push(attentive_plugins::ToolCall {
+                    tool,
+                    target,
+                    content,
+                    old_string,
+                    command,
+                });
+            }
+        }
+
+        if !turn_calls.is_empty() {
+            last_tool_calls = turn_calls;
+        }
+    }
+
+    last_tool_calls
 }
 
 fn extract_files_from_tool_calls(tool_calls: &[attentive_plugins::ToolCall]) -> Vec<String> {
