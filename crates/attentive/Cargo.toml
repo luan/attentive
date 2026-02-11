@@ -15,10 +15,31 @@ attentive-repo = { path = "../attentive-repo" }
 attentive-compress = { path = "../attentive-compress" }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
 
-[features]
-default = []
-tree-sitter = ["attentive-index/tree-sitter"]
-embeddings = ["attentive-learn/embeddings"]
-claude-api = ["attentive-compress/claude-api"]
-all = ["tree-sitter", "embeddings", "claude-api"]
+[dev-dependencies]
+attentive-core = { path = "../attentive-core" }
+attentive-index = { path = "../attentive-index" }
+attentive-learn = { path = "../attentive-learn" }
+attentive-plugins = { path = "../attentive-plugins" }
+attentive-repo = { path = "../attentive-repo" }
+attentive-telemetry = { path = "../attentive-telemetry" }
+criterion = { workspace = true }
+tempfile = { workspace = true }
+serial_test = { workspace = true }
+
+[[bench]]
+name = "router_update"
+harness = false
+
+[[bench]]
+name = "full_pipeline"
+harness = false
+
+[[bench]]
+name = "index_search"
+harness = false
