@@ -1,0 +1,24 @@
+[package]
+name = "attentive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+attentive-core = { path = "../attentive-core" }
+attentive-telemetry = { path = "../attentive-telemetry" }
+attentive-plugins = { path = "../attentive-plugins" }
+attentive-learn = { path = "../attentive-learn" }
+attentive-index = { path = "../attentive-index" }
+attentive-repo = { path = "../attentive-repo" }
+attentive-compress = { path = "../attentive-compress" }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+default = []
+tree-sitter = ["attentive-index/tree-sitter"]
+embeddings = ["attentive-learn/embeddings"]
+claude-api = ["attentive-compress/claude-api"]
+all = ["tree-sitter", "embeddings", "claude-api"]

@@ -1,0 +1,18 @@
+[package]
+name = "attentive-compress"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+attentive-core = { path = "../attentive-core" }
+attentive-telemetry = { path = "../attentive-telemetry" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+anthropic-sdk = { version = "0.1", optional = true }
+
+[features]
+claude-api = ["dep:anthropic-sdk"]

@@ -1,0 +1,36 @@
+[workspace]
+members = [
+    "crates/attentive",
+    "crates/attentive-core",
+    "crates/attentive-telemetry",
+    "crates/attentive-plugins",
+    "crates/attentive-learn",
+    "crates/attentive-index",
+    "crates/attentive-repo",
+    "crates/attentive-compress",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/jeranaias/attnroute"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+
+# Optional dependencies (not workspace-level since they can't be optional)
+# These are declared directly in crates that need them

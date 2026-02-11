@@ -1,0 +1,12 @@
+[package]
+name = "attentive-plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+attentive-core = { path = "../attentive-core" }
+attentive-telemetry = { path = "../attentive-telemetry" }
+anyhow = { workspace = true }
+thiserror = { workspace = true }

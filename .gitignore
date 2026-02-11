@@ -1,0 +1,21 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Lock files (workspace uses unified lock file)
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+*.profraw
+*.profdata
