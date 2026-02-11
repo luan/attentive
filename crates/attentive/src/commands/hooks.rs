@@ -669,7 +669,7 @@ mod tests {
             context_confidence: Some(0.8),
         }];
         let dashboard = build_dashboard(&turns, None);
-        assert!(dashboard.contains("attnroute") || dashboard.contains("attentive"));
+        assert!(dashboard.contains("attentive"));
         assert!(dashboard.contains("Waste"));
     }
 

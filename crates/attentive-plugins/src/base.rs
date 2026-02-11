@@ -84,7 +84,7 @@ pub fn is_plugin_enabled(plugin_name: &str) -> bool {
     }
 }
 
-/// Base trait for attnroute plugins
+/// Base trait for attentive plugins
 pub trait Plugin: Send + Sync {
     /// Plugin name (unique identifier)
     fn name(&self) -> &str;
