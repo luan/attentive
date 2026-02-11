@@ -336,17 +336,16 @@ pub fn hook_session_start() -> anyhow::Result<()> {
     if detect_project_switch(&session_state_path, &cwd) {
         // Reset attention state
         let attn_path = paths.attn_state_path()?;
-        if attn_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&attn_path) {
-                if let Ok(mut state) = serde_json::from_str::<AttentionState>(&content) {
-                    for score in state.scores.values_mut() {
-                        *score = 0.0;
-                    }
-                    state.turn_count = 0;
-                    if let Ok(json) = serde_json::to_string_pretty(&state) {
-                        let _ = attentive_telemetry::atomic_write(&attn_path, json.as_bytes());
-                    }
-                }
+        if attn_path.exists()
+            && let Ok(content) = std::fs::read_to_string(&attn_path)
+            && let Ok(mut state) = serde_json::from_str::<AttentionState>(&content)
+        {
+            for score in state.scores.values_mut() {
+                *score = 0.0;
+            }
+            state.turn_count = 0;
+            if let Ok(json) = serde_json::to_string_pretty(&state) {
+                let _ = attentive_telemetry::atomic_write(&attn_path, json.as_bytes());
             }
         }
         eprintln!("[attentive] Project switch detected, attention reset");
@@ -390,7 +389,7 @@ pub fn hook_session_start() -> anyhow::Result<()> {
 }
 
 pub fn hook_stop() -> anyhow::Result<()> {
-    use attentive_telemetry::{append_jsonl, TurnRecord};
+    use attentive_telemetry::{TurnRecord, append_jsonl};
 
     // 1. Read stdin (tool calls JSON)
     let mut input_str = String::new();
@@ -507,10 +506,10 @@ fn uuid_simple() -> String {
 fn extract_files_from_tool_calls(tool_calls: &[attentive_plugins::ToolCall]) -> Vec<String> {
     let mut files = std::collections::HashSet::new();
     for tc in tool_calls {
-        if let Some(target) = &tc.target {
-            if !target.is_empty() {
-                files.insert(target.clone());
-            }
+        if let Some(target) = &tc.target
+            && !target.is_empty()
+        {
+            files.insert(target.clone());
         }
     }
     files.into_iter().collect()

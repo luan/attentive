@@ -48,10 +48,10 @@ fn extract_prompt_from_turn(turn: &serde_json::Value) -> String {
     }
     if let Some(arr) = content.as_array() {
         for item in arr {
-            if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                    return text.to_string();
-                }
+            if item.get("type").and_then(|t| t.as_str()) == Some("text")
+                && let Some(text) = item.get("text").and_then(|t| t.as_str())
+            {
+                return text.to_string();
             }
         }
     }

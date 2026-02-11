@@ -174,16 +174,15 @@ impl Learner {
 
             for word in &words {
                 let idf = self.calculate_idf(word);
-                if let Some(file_counts) = self.word_file_counts.get(word) {
-                    if let Some(&count) = file_counts.get(file) {
-                        // Normalize count by turn_count to get frequency
-                        let frequency = if self.turn_count > 0 {
-                            count as f64 / self.turn_count as f64
-                        } else {
-                            0.0
-                        };
-                        affinity_sum += idf * frequency;
-                    }
+                if let Some(file_counts) = self.word_file_counts.get(word)
+                    && let Some(&count) = file_counts.get(file)
+                {
+                    let frequency = if self.turn_count > 0 {
+                        count as f64 / self.turn_count as f64
+                    } else {
+                        0.0
+                    };
+                    affinity_sum += idf * frequency;
                 }
             }
 

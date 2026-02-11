@@ -46,15 +46,15 @@ fn scan_dir(root: &Path, dir: &Path, skip: &[&str], files: &mut Vec<(String, Str
             if !skip.contains(&name.as_str()) {
                 scan_dir(root, &path, skip, files);
             }
-        } else if path.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                let rel = path
-                    .strip_prefix(root)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string();
-                files.push((rel, content));
-            }
+        } else if path.is_file()
+            && let Ok(content) = std::fs::read_to_string(&path)
+        {
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+            files.push((rel, content));
         }
     }
 }

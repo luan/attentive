@@ -57,7 +57,7 @@ impl AttentionState {
     pub fn get_hot_files(&self) -> Vec<String> {
         self.scores
             .iter()
-            .filter(|(_, &score)| score >= 0.8)
+            .filter(|&(_, &score)| score >= 0.8)
             .map(|(path, _)| path.clone())
             .collect()
     }
@@ -65,7 +65,7 @@ impl AttentionState {
     pub fn get_warm_files(&self) -> Vec<String> {
         self.scores
             .iter()
-            .filter(|(_, &score)| (0.25..0.8).contains(&score))
+            .filter(|&(_, &score)| (0.25..0.8).contains(&score))
             .map(|(path, _)| path.clone())
             .collect()
     }

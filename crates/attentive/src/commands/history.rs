@@ -1,4 +1,4 @@
-use attentive_telemetry::{read_jsonl, Paths, TurnRecord};
+use attentive_telemetry::{Paths, TurnRecord, read_jsonl};
 
 #[derive(Default)]
 struct HistoryFilter {
@@ -15,15 +15,16 @@ fn filter_turns<'a>(turns: &'a [TurnRecord], filter: &HistoryFilter) -> Vec<&'a 
     turns
         .iter()
         .filter(|t| {
-            if let Some(ref cutoff) = cutoff {
-                if t.timestamp < *cutoff {
-                    return false;
-                }
+            if let Some(ref cutoff) = cutoff
+                && t.timestamp < *cutoff
+            {
+                return false;
             }
-            if let Some(ref file) = filter.file {
-                if !t.files_injected.contains(file) && !t.files_used.contains(file) {
-                    return false;
-                }
+            if let Some(ref file) = filter.file
+                && !t.files_injected.contains(file)
+                && !t.files_used.contains(file)
+            {
+                return false;
             }
             true
         })

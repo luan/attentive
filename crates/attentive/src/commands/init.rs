@@ -117,12 +117,12 @@ mod tests {
         fs::create_dir_all(&claude_dir).unwrap();
 
         // Override HOME for this test
-        std::env::set_var("HOME", temp.path());
+        unsafe { std::env::set_var("HOME", temp.path()) };
 
         let result = run();
 
         // Restore HOME
-        std::env::set_var("HOME", &original_home);
+        unsafe { std::env::set_var("HOME", &original_home) };
 
         assert!(result.is_ok());
         assert!(claude_dir.join("settings.json").exists());
@@ -164,9 +164,9 @@ mod tests {
         )
         .unwrap();
 
-        std::env::set_var("HOME", temp.path());
+        unsafe { std::env::set_var("HOME", temp.path()) };
         let result = run();
-        std::env::set_var("HOME", &original_home);
+        unsafe { std::env::set_var("HOME", &original_home) };
 
         assert!(result.is_ok());
 

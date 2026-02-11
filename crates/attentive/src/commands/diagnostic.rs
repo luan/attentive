@@ -33,10 +33,10 @@ fn build_diagnostic(json_mode: bool) -> String {
             sections.push(format!("  {} {}", status, name));
         }
 
-        if let Some(git) = &git_info {
-            if let Some(branch) = git.get("branch").and_then(|b| b.as_str()) {
-                sections.push(format!("\nGit\n---\n  Branch: {}", branch));
-            }
+        if let Some(git) = &git_info
+            && let Some(branch) = git.get("branch").and_then(|b| b.as_str())
+        {
+            sections.push(format!("\nGit\n---\n  Branch: {}", branch));
         }
 
         let issues: usize = file_checks
