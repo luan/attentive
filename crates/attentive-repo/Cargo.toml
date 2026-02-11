@@ -13,3 +13,5 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
+petgraph = "0.8"
+regex = "1.10"
