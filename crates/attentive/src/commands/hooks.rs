@@ -426,25 +426,6 @@ pub fn hook_stop() -> anyhow::Result<()> {
         None
     };
 
-    let (injected_tokens, used_tokens) = if let Some(ref state) = state {
-        let hot = state.get_hot_files();
-        let warm = state.get_warm_files();
-        let injected = hot.len() * 500 + warm.len() * 200;
-        let used = tool_calls
-            .iter()
-            .map(|tc| {
-                let content_len = tc.content.as_deref().unwrap_or("").len()
-                    + tc.old_string.as_deref().unwrap_or("").len()
-                    + tc.command.as_deref().unwrap_or("").len();
-                content_len / 4
-            })
-            .sum::<usize>();
-        (injected, used)
-    } else {
-        (0, 0)
-    };
-
-    let waste_ratio = calculate_waste_ratio(injected_tokens, used_tokens);
     let files_used = extract_files_from_tool_calls(&tool_calls);
 
     let files_injected = if let Some(ref state) = state {
@@ -455,8 +436,10 @@ pub fn hook_stop() -> anyhow::Result<()> {
         Vec::new()
     };
 
-    let context_confidence = compute_context_confidence(&files_injected, &files_used);
-    let injection_chars = injected_tokens * 4;
+    // Hit rate: fraction of injected files that Claude actually touched
+    let hit_rate = compute_hit_rate(&files_injected, &files_used);
+    let injected_tokens = files_injected.len() * 500;
+    let used_tokens = (hit_rate * injected_tokens as f64) as usize;
 
     let record = TurnRecord {
         turn_id: uuid_simple(),
@@ -465,12 +448,12 @@ pub fn hook_stop() -> anyhow::Result<()> {
         timestamp: chrono::Utc::now(),
         injected_tokens,
         used_tokens,
-        waste_ratio,
+        waste_ratio: 1.0 - hit_rate,
         files_injected,
         files_used: files_used.clone(),
         was_notification: false,
-        injection_chars,
-        context_confidence: Some(context_confidence),
+        injection_chars: injected_tokens * 4,
+        context_confidence: Some(hit_rate),
     };
     append_jsonl(&paths.turns_file(), &record)?;
 
@@ -598,7 +581,7 @@ fn extract_files_from_tool_calls(tool_calls: &[attentive_plugins::ToolCall]) -> 
     files.into_iter().collect()
 }
 
-fn compute_context_confidence(files_injected: &[String], files_used: &[String]) -> f64 {
+fn compute_hit_rate(files_injected: &[String], files_used: &[String]) -> f64 {
     if files_injected.is_empty() {
         return 0.0;
     }
@@ -609,14 +592,6 @@ fn compute_context_confidence(files_injected: &[String], files_used: &[String]) 
         .filter(|f| used_set.contains(*f))
         .count() as f64
         / injected_set.len() as f64
-}
-
-fn calculate_waste_ratio(injected_tokens: usize, used_tokens: usize) -> f64 {
-    if injected_tokens > 0 {
-        (1.0 - (used_tokens as f64 / injected_tokens as f64)).clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
 }
 
 #[cfg(test)]
@@ -651,11 +626,13 @@ mod tests {
     }
 
     #[test]
-    fn test_waste_ratio_calculation() {
-        assert!((calculate_waste_ratio(1000, 300) - 0.7).abs() < f64::EPSILON);
-        assert!((calculate_waste_ratio(1000, 1000) - 0.0).abs() < f64::EPSILON);
-        assert!((calculate_waste_ratio(1000, 1500) - 0.0).abs() < f64::EPSILON); // clamped
-        assert!((calculate_waste_ratio(0, 500) - 0.0).abs() < f64::EPSILON); // no injection
+    fn test_hit_rate() {
+        let injected = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()];
+        let used = vec!["a.rs".to_string(), "c.rs".to_string()];
+        let rate = compute_hit_rate(&injected, &used);
+        assert!((rate - 2.0 / 3.0).abs() < 0.01);
+
+        assert!((compute_hit_rate(&[], &used) - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -788,19 +765,18 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_context_confidence() {
-        let files_injected = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()];
-        let files_used = vec!["a.rs".to_string(), "b.rs".to_string()];
-
-        let confidence = compute_context_confidence(&files_injected, &files_used);
-        assert!(confidence > 0.5);
-        assert!(confidence < 1.0);
+    fn test_hit_rate_partial() {
+        let injected = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()];
+        let used = vec!["a.rs".to_string(), "b.rs".to_string()];
+        let rate = compute_hit_rate(&injected, &used);
+        assert!(rate > 0.5);
+        assert!(rate < 1.0);
     }
 
     #[test]
-    fn test_compute_context_confidence_empty() {
-        let confidence = compute_context_confidence(&[], &[]);
-        assert!((confidence - 0.0).abs() < f64::EPSILON);
+    fn test_hit_rate_empty() {
+        let rate = compute_hit_rate(&[], &[]);
+        assert!((rate - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
