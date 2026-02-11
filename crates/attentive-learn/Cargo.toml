@@ -6,13 +6,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-attentive-core = { path = "../attentive-core" }
 attentive-telemetry = { path = "../attentive-telemetry" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-hf-hub = { version = "0.3", optional = true }
-
-[features]
-embeddings = ["dep:hf-hub"]
+regex = "1.10"
+hf-hub = { version = "0.4" }
