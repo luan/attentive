@@ -301,11 +301,13 @@ pub fn hook_user_prompt_submit() -> anyhow::Result<()> {
     let _activated =
         router.update_attention(&mut state, &prompt, learner.as_ref(), directly_activated);
 
-    // Enforce floors for learned files — warmup files stay WARM, frequent files stay visible
+    // Enforce floors for learned files — top warmup files get HOT, rest stay visible
     if let Some(l) = &learner {
-        for file in l.get_warmup() {
+        for (i, file) in l.get_warmup().into_iter().enumerate() {
             let score = state.scores.entry(file).or_insert(0.0);
-            *score = score.max(0.6); // WARM, not HOT
+            // Top 3 warmup → HOT (full content), rest → WARM (TOC only)
+            let floor = if i < 3 { 0.8 } else { 0.6 };
+            *score = score.max(floor);
         }
         for (file, _freq) in l.top_files_by_frequency(5) {
             let score = state.scores.entry(file).or_insert(0.0);

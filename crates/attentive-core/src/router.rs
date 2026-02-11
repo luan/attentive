@@ -32,9 +32,10 @@ impl Router {
         learner: Option<&attentive_learn::Learner>,
         directly_activated: HashSet<String>,
     ) -> HashSet<String> {
-        // Add newly mentioned files to state with initial score
+        // Files mentioned in the prompt are directly relevant — make them HOT
         for activated_path in &directly_activated {
-            state.scores.entry(activated_path.clone()).or_insert(0.6);
+            let score = state.scores.entry(activated_path.clone()).or_insert(0.8);
+            *score = score.max(0.8);
             state
                 .consecutive_turns
                 .entry(activated_path.clone())
